@@ -1,0 +1,106 @@
+#!/system/bin/sh
+
+export PATH="/data/adb/magisk:/data/adb/ksu/bin:$PATH:/system/bin"
+
+termux_path="/data/data/com.termux/files/usr/bin"
+box_run_path="/data/adb/boxui/run"
+
+PROPFILE="/data/adb/modules/boxui/module.prop"
+logs_file="/data/adb/boxui/run/boxui.log"
+current_time=$(date +"%I:%M %P")
+
+log() {
+    level="$1"
+    message="$2"
+    color=""
+
+    case "$level" in
+        info)
+            color="1;33"
+            ;;
+        error)
+            color="1;35"
+            ;;
+        *)
+            color="1;30"
+            ;;
+    esac
+    format="${current_time} [$level]: $message"
+    [ -t 1 ] && echo -e "\033[${color}m${format}\033[0m" || echo "$format" | tee -a "${logs_file}" >> /dev/null 2>&1
+}
+
+bin_usage() {
+    PID=$(busybox pidof php 2> /dev/null)
+    rss=$(grep VmRSS /proc/$PID/status | busybox awk -F':' '{print $2}' | busybox awk '{print $1}')
+    [ ${rss} -ge 1024 ] && bin_rss="$(expr ${rss} / 1024)Mb" || bin_rss="${rss}Kb"
+    swap=$(grep VmSwap /proc/$PID/status | busybox awk -F':' '{print $2}' | busybox awk '{print $1}')
+    [ ${swap} -ge 1024 ] && bin_swap="$(expr ${swap} / 1024)Mb" || bin_swap="${swap}Kb"
+    state=$(grep State /proc/$PID/status | busybox awk -F':' '{print $2}' | awk '{print $2}')
+
+    if [ -n "$PID" ]; then
+        log info "PHP has started with the $(stat -c %U:%G /proc/$PID) user group."
+        log info "PHP status: ${state}, PID: ($PID)"
+        log info "PHP memory usage: ${bin_rss}, swap: ${bin_swap}"
+        log info "PHP cpu usage: $((/system/bin/ps -p $PID -o pcpu | grep -v %CPU | awk '{print $1}') 2> /dev/null)%"
+        log info "PHP running time: $(/system/bin/ps -p $PID -o comm,etime | grep php | busybox awk '{print $2}')"
+    fi
+
+    if [ -n "$PID" ]; then
+        sed -Ei "s/^description=(\[.*][[:space:]]*)?/description=[ 🤪 $current_time | service is running ] /g" "$PROPFILE"
+        echo -n "$PID" > "/data/adb/boxui/run/boxui.pid"
+    fi
+}
+
+file_start() {
+    PID=$(busybox pidof php 2> /dev/null)
+    if [ -n "$PID" ] && (cat /proc/$PID/cmdline | grep -q php); then
+        log info "PHP service is running."
+        exit 1
+    fi
+
+    if [ -f "$termux_path/php" ]; then
+        chown 0:3005 "$termux_path/php"
+        chmod 0755 "$termux_path/php"
+        chown -R 0:3005 /data/adb/boxui
+
+        > "$box_run_path/boxui.log"
+        log info "start service php"
+        nohup busybox setuidgid root:net_admin "$termux_path/php" -S 0.0.0.0:9999 -t /data/adb/box > /dev/null 2>&1 &
+        PID=$!
+        echo -n $PID > "$box_run_path/boxui.pid"
+        sleep 1
+        if busybox pidof "php" >/dev/null 2>&1 ; then
+            log info "PHP service is running (PID: $(pgrep -fo "php"))"
+            bin_usage
+            log info "BOXUI started"
+        else
+            log error "PHP Service is not running"
+        fi
+    else
+        log error "PHP binary $termux_path/php not detected."
+        exit 1
+    fi
+}
+
+file_stop() {
+    PID=$(busybox pidof php 2> /dev/null)
+    if [ -n "$PID" ] && kill -9 $PID; then
+        rm -rf "$box_run_path/boxui.pid"
+        log info "PHP service is stopped."
+        sed -Ei "s/^description=(\[.*][[:space:]]*)?/description=[ 🤬 $current_time | service is stopped ] /g" "$PROPFILE"
+    fi
+}
+
+case "$1" in
+    start)
+        file_stop > /dev/null 2>&1
+        file_start
+        ;;
+    stop)
+        file_stop
+        ;;
+    *)
+        echo "$0 $1 not found"
+        echo "usage: $0 {start|stop}"
+        ;;
+esac

@@ -1,0 +1,7 @@
+id=boxui
+name=Yet Another Box UI
+version=v2.0-beta.1
+versionCode=20230824
+author=RE:ERA
+description= for open BOX UI "gateway or, localhost, port: 9999".
+updateJson=https://github.com/taamarin/ui4cfm/raw/master/update.json

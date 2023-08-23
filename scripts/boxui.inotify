@@ -1,0 +1,28 @@
+#!/system/bin/sh
+
+scripts=$(realpath $0)
+scripts_dir=$(dirname ${scripts})
+service_path="/data/adb/boxui/boxui.service"
+run_path="/data/adb/boxui/run"
+
+events=$1
+monitor_dir=$2
+monitor_file=$3
+
+create_run() {
+    if [ ! -d "/data/adb/boxui/run" ] ; then
+        mkdir -p /data/adb/boxui/run
+    fi
+}
+
+service_control() {
+    if [ "${monitor_file}" = "disable" ] ; then
+        if [ "${events}" = "d" ] ; then
+            ${service_path} start >> /dev/null 2> ${run_path}/service.log
+        elif [ "${events}" = "n" ] ; then
+            ${service_path} stop >> /dev/null 2>> ${run_path}/service.log
+        fi
+    fi
+}
+create_run
+service_control
